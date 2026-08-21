@@ -28,6 +28,7 @@
   <script src="js/utils.js"></script>
   <script>
   let fulfillment = 'pickup';
+  let currentCheckoutOrder = null;
 
   window.addEventListener('DOMContentLoaded', async () => {
     renderHeader('');
@@ -232,6 +233,7 @@
     }
 
     btn.disabled = false;
+    currentCheckoutOrder = order;
     openPayModal(order);
   }
 
@@ -351,12 +353,37 @@
         <div style="width:56px;height:56px;background:#DCFCE7;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.5rem;">✓</div>
         <h2 class="heading-lg">Order Placed!</h2>
         <p class="body-sm" style="margin-top:.75rem;max-width:320px;margin-left:auto;margin-right:auto;">${msg}</p>
-        <div style="background:var(--parchment);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-top:1.5rem;font-size:.8rem;">
+        <div style="background:var(--parchment);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-top:1.5rem;font-size:.8rem;margin-bottom:1.5rem;">
           <strong>Order ID: ${orderId}</strong><br><span style="color:var(--ink-mute);">Save this to track your order.</span>
         </div>
       </div>
+      
+      <div style="display:flex;flex-direction:column;gap:0.6rem;margin-bottom:1rem;">
+        <button onclick="printInvoice(currentCheckoutOrder)" class="btn btn-outline" style="width:100%;justify-content:center;padding:0.75rem;font-size:0.85rem;">
+          📄 Download PDF Invoice
+        </button>
+        <button onclick="sendOwnerWhatsAppNotification(currentCheckoutOrder)" class="btn btn-outline" style="width:100%;justify-content:center;padding:0.75rem;font-size:0.85rem;border-color:#25D366;color:#25D366;">
+          💬 Send Order to Press (WhatsApp)
+        </button>
+      </div>
+
       <a href="track.html?id=${orderId}&phone=${encodeURIComponent(phone)}" class="btn btn-primary" style="width:100%;">Track My Order →</a>
     `;
+
+    // Automatically trigger the WhatsApp notification window
+    if (currentCheckoutOrder) {
+      setTimeout(() => {
+        sendOwnerWhatsAppNotification(currentCheckoutOrder);
+      }, 800);
+    }
+  }
+
+  function sendOwnerWhatsAppNotification(order) {
+    if (!order) return;
+    const itemsText = (order.items || []).map(i => `- ${i.name} (x${i.qty})`).join('%0A');
+    const msg = `*🟢 NEW ORDER PLACED - Print Vatika*%0A%0A*Order ID:* ${order.id}%0A*Customer:* ${order.name}%0A*Phone:* ${order.phone}%0A*Total:* ₹${order.total}%0A*Fulfillment:* ${order.fulfillment.toUpperCase()}%0A%0A*Items:*%0A${itemsText}%0A%0AView details: https://printvatika-weld.vercel.app/admin.html`;
+    const waURL = `https://wa.me/919811427517?text=${msg}`;
+    window.open(waURL, '_blank');
   }
   </script>
 </body>

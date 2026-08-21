@@ -297,3 +297,109 @@ window.statusBadge = function (status) {
   const [label, cls] = map[status] || [status, ''];
   return `<span class="status-badge ${cls}">${label}</span>`;
 };
+
+// ── PRINT INVOICE GENERATOR ──────────────────────────────────
+window.printInvoice = function (order) {
+  const w = window.open('', '_blank');
+  if (!w) { alert('Popup blocked. Please allow popups to view the invoice.'); return; }
+  
+  const itemsHtml = (order.items || []).map(i => `
+    <tr>
+      <td style="padding: 12px 8px; border-bottom: 1px solid #E2E8F0; font-size: 14px;">
+        <strong>${i.name}</strong>
+        ${i.dims ? `<br><small style="color: #64748B;">Size: ${i.dims.w} × ${i.dims.h} ft</small>` : ''}
+      </td>
+      <td style="padding: 12px 8px; border-bottom: 1px solid #E2E8F0; text-align: center; font-size: 14px;">${i.qty}</td>
+      <td style="padding: 12px 8px; border-bottom: 1px solid #E2E8F0; text-align: right; font-size: 14px; font-weight: 600;">₹${(i.price || 0).toLocaleString('en-IN')}</td>
+    </tr>
+  `).join('');
+
+  w.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Invoice - ${order.id}</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1E293B; margin: 0; padding: 40px; background: #FFFFFF; }
+        .invoice-card { max-width: 800px; margin: 0 auto; border: 1px solid #E2E8F0; border-radius: 8px; padding: 40px; }
+        .invoice-header { display: flex; justify-content: space-between; border-bottom: 2px solid #1E293B; padding-bottom: 20px; margin-bottom: 30px; }
+        .brand { font-size: 24px; font-weight: 800; font-family: Georgia, serif; }
+        .meta { text-align: right; }
+        .title { font-size: 22px; font-weight: 800; color: #0F172A; margin-bottom: 6px; }
+        .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px; }
+        .section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #64748B; margin-bottom: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+        th { background: #F8FAFC; padding: 10px 8px; text-align: left; border-bottom: 2px solid #E2E8F0; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; }
+        .summary-box { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; border-top: 2px solid #E2E8F0; padding-top: 20px; }
+        .summary-row { display: flex; justify-content: space-between; width: 280px; font-size: 14px; }
+        .summary-total { font-size: 18px; font-weight: 800; color: #0F172A; border-top: 1px solid #E2E8F0; padding-top: 8px; margin-top: 4px; }
+        @media print {
+          body { padding: 0; }
+          .invoice-card { border: none; padding: 0; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="invoice-card">
+        <div class="invoice-header">
+          <div>
+            <div class="brand">Print Vatika</div>
+            <div style="font-size: 13px; color: #64748B; margin-top: 4px; line-height: 1.4;">
+              F-298, Himmat Singh Marg, Near Saket Metro<br>
+              Lado Sarai, New Delhi – 110030<br>
+              Phone: 098114 27517
+            </div>
+          </div>
+          <div class="meta">
+            <div class="title">INVOICE</div>
+            <div style="font-size: 14px; font-weight: 700; margin-bottom: 4px;">ID: ${order.id}</div>
+            <div style="font-size: 13px; color: #64748B;">Date: ${new Date(order.created_at || Date.now()).toLocaleDateString('en-IN')}</div>
+          </div>
+        </div>
+
+        <div class="details-grid">
+          <div>
+            <div class="section-title">Billed To</div>
+            <div style="font-size: 14px; line-height: 1.5;">
+              <strong>${order.name}</strong><br>
+              ${order.phone}<br>
+              ${order.email}
+            </div>
+          </div>
+          <div>
+            <div class="section-title">Fulfillment</div>
+            <div style="font-size: 14px; line-height: 1.5; text-transform: capitalize;">
+              <strong>${order.fulfillment}</strong><br>
+              ${order.address}
+            </div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr><th>Product Description</th><th style="text-align: center;">Qty</th><th style="text-align: right;">Price</th></tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+        </table>
+
+        <div class="summary-box">
+          <div class="summary-row"><span>Subtotal</span><span>₹${(order.subtotal || 0).toLocaleString('en-IN')}</span></div>
+          <div class="summary-row"><span>Fulfillment / Delivery</span><span>${order.delivery > 0 ? '₹' + order.delivery.toLocaleString('en-IN') : 'Free'}</span></div>
+          <div class="summary-row summary-total"><span>Total Amount</span><span>₹${(order.total || 0).toLocaleString('en-IN')}</span></div>
+        </div>
+      </div>
+      <script>
+        window.onload = function() {
+          setTimeout(function() {
+            window.print();
+            window.close();
+          }, 300);
+        };
+      </script>
+    </body>
+    </html>
+  `);
+  w.document.close();
+};
