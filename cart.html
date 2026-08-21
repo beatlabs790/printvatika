@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cart & Checkout — Print Vatika</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+  <header class="site-header" id="site-header"></header>
+
+  <div class="cart-page">
+    <div class="cart-layout" id="cart-layout"><!-- injected --></div>
+  </div>
+
+  <!-- UPI Payment Modal -->
+  <div id="pay-modal" style="display:none;" class="modal-bg">
+    <div class="modal-card" id="pay-modal-inner"></div>
+  </div>
+
+  <footer class="site-footer" id="site-footer"></footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/products.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+  let fulfillment = 'pickup';
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    renderHeader('');
+    renderFooter();
+    await loadSettings();
+    await renderCart();
+  });
+
+  async function renderCart() {
+    let userFullName = '';
+    let userEmail = '';
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      if (session) {
+        userFullName = session.user.user_metadata?.full_name || '';
+        userEmail = session.user.email || '';
+      }
+    } catch(e) {}
+    const items = Cart.get();
+    const layout = document.getElementById('cart-layout');
+    if (!layout) return;
+
+    if (items.length === 0) {
+      layout.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:6rem 2rem;">
+        <div style="font-size:3rem;margin-bottom:1rem;">🛒</div>
+        <div class="heading-md" style="margin-bottom:.5rem;">Your cart is empty</div>
+        <p class="body-sm" style="margin-bottom:1.5rem;">Browse the catalog and customise a product to get started.</p>
+        <a href="catalog.html" class="btn btn-primary">Browse Products</a>
+      </div>`;
+      return;
+    }
+
+    const subtotal = Cart.subtotal();
+    const delivery = fulfillment === 'delivery' ? 50 : 0;
+    const total    = subtotal + delivery;
+
+    layout.innerHTML = `
+      <!-- Items column -->
+      <div>
+        <div class="section-box">
+          <div class="section-box-header">Your Cart (${items.length} item${items.length!==1?'s':''})</div>
+          ${items.map(item => {
+            const tags = Object.entries(item.options||{}).filter(([,v])=>v).map(([k,v])=>`<span class="cart-tag">${k}: ${v}</span>`).join('');
+            const dimTag = item.dims ? `<span class="cart-tag">${item.dims.w}×${item.dims.h} ft</span>` : '';
+            return `<div class="cart-item">
+              <img class="cart-thumb" src="${item.preview||item.product.image}" alt="${item.product.name}">
+              <div class="cart-item-info">
+                <div class="cart-item-name">${item.product.name}</div>
+                <div class="cart-tags">${dimTag}${tags}</div>
+                <div class="cart-qty-ctrl">
+                  <button class="qty-ctrl-btn" onclick="adjQty('${item.id}',-1)">−</button>
+                  <div class="qty-display">${item.qty}</div>
+                  <button class="qty-ctrl-btn" onclick="adjQty('${item.id}',1)">+</button>
+                  <div class="cart-item-price" style="margin-left:.5rem;">₹${fmt(item.price)}</div>
+                </div>
+              </div>
+              <button class="cart-remove" title="Remove" onclick="rmItem('${item.id}')">×</button>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- Checkout column -->
+      <div>
+        <div class="section-box">
+          <div class="section-box-header">Contact Details</div>
+          <form class="checkout-form" id="checkout-form" onsubmit="submitOrder(event)">
+            <div class="form-field">
+              <label class="form-label">Full Name *</label>
+              <input id="f-name" type="text" class="form-input" placeholder="Your name" value="${userFullName}" required>
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label class="form-label">Phone (WhatsApp) *</label>
+                <input id="f-phone" type="tel" class="form-input" placeholder="10-digit number" required>
+              </div>
+              <div class="form-field">
+                <label class="form-label">Email *</label>
+                <input id="f-email" type="email" class="form-input" placeholder="you@email.com" value="${userEmail}" required>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label class="form-label">Fulfilment</label>
+              <div class="fulfillment-tabs">
+                <button type="button" id="tab-pickup"   class="fulfillment-tab active" onclick="setFF('pickup')">Pickup (Free)</button>
+                <button type="button" id="tab-delivery" class="fulfillment-tab"        onclick="setFF('delivery')">Porter Delivery (+₹50)</button>
+              </div>
+            </div>
+
+            <div id="pickup-info">
+              <div class="pickup-info"><strong>Pickup:</strong> F-298, Himmat Singh Marg, Near Saket Metro, Lado Sarai, New Delhi – 110030</div>
+            </div>
+
+            <div id="delivery-fields" style="display:none;flex-direction:column;gap:.6rem;">
+              <div class="form-field"><label class="form-label">Street Address</label><input id="f-addr" type="text" class="form-input" placeholder="Street address"></div>
+              <div class="form-row">
+                <input id="f-city" type="text" class="form-input" placeholder="City">
+                <input id="f-pin"  type="text" class="form-input" placeholder="Pincode">
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label class="form-label">Notes for press operator</label>
+              <textarea id="f-notes" class="form-input" rows="2" placeholder="e.g. Print slightly lighter, urgent…"></textarea>
+            </div>
+
+            <div class="checkout-summary">
+              <div class="summary-row"><span>Subtotal</span><span>₹${fmt(subtotal)}</span></div>
+              <div class="summary-row"><span>Delivery</span><span id="delivery-amt">${delivery > 0 ? '₹'+delivery : 'Free (self-pickup)'}</span></div>
+              <div class="summary-total"><span>Total</span><span id="total-amt">₹${fmt(total)}</span></div>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width:100%;padding:1rem;font-size:.95rem;" id="place-btn">
+              Confirm Order →
+            </button>
+          </form>
+        </div>
+      </div>
+    `;
+  }
+
+  function adjQty(id, delta) {
+    const items = Cart.get();
+    const item  = items.find(i => i.id === id);
+    if (!item) return;
+    item.qty = Math.max(1, item.qty + delta);
+    Cart.save(items);
+    renderCart();
+  }
+
+  function rmItem(id) { Cart.remove(id); renderCart(); }
+
+  function setFF(mode) {
+    fulfillment = mode;
+    document.getElementById('tab-pickup').classList.toggle('active', mode === 'pickup');
+    document.getElementById('tab-delivery').classList.toggle('active', mode === 'delivery');
+    document.getElementById('pickup-info').style.display       = mode === 'pickup'   ? 'block' : 'none';
+    document.getElementById('delivery-fields').style.display   = mode === 'delivery' ? 'flex'  : 'none';
+    const delivery = mode === 'delivery' ? 50 : 0;
+    const subtotal = Cart.subtotal();
+    document.getElementById('delivery-amt').textContent = delivery > 0 ? '₹'+delivery : 'Free (self-pickup)';
+    document.getElementById('total-amt').textContent    = '₹' + fmt(subtotal + delivery);
+  }
+
+  // ── SUBMIT ORDER ──────────────────────────────
+  async function submitOrder(e) {
+    e.preventDefault();
+    const btn = document.getElementById('place-btn');
+    btn.disabled = true; btn.textContent = 'Saving order…';
+
+    const name  = document.getElementById('f-name').value.trim();
+    const phone = document.getElementById('f-phone').value.trim();
+    const email = document.getElementById('f-email').value.trim();
+    if (!name) { alert('Please enter your name.'); btn.disabled=false; btn.textContent='Confirm Order →'; return; }
+    if (phone.replace(/\D/g,'').length < 10) { alert('Please enter a valid 10-digit phone.'); btn.disabled=false; btn.textContent='Confirm Order →'; return; }
+
+    let address = 'Self-pickup at shop';
+    if (fulfillment === 'delivery') {
+      const addr = document.getElementById('f-addr')?.value.trim();
+      const city = document.getElementById('f-city')?.value.trim();
+      const pin  = document.getElementById('f-pin')?.value.trim();
+      if (!addr || !city || !pin) { alert('Please fill in your complete delivery address.'); btn.disabled=false; btn.textContent='Confirm Order →'; return; }
+      address = `${addr}, ${city} – ${pin}`;
+    }
+
+    const items = Cart.get();
+    const subtotal = Cart.subtotal();
+    const delivery = fulfillment === 'delivery' ? 50 : 0;
+    const total    = subtotal + delivery;
+    const orderId  = await genOrderId();
+
+    let userId = null;
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      if (session) userId = session.user.id;
+    } catch(e) {}
+
+    const order = {
+      id:          orderId,
+      user_id:     userId,
+      name, phone, email,
+      fulfillment, address,
+      notes: document.getElementById('f-notes')?.value.trim() || '',
+      items: items.map(i => ({ name: i.product.name, qty: i.qty, options: i.options, dims: i.dims, price: i.price, preview: i.preview })),
+      subtotal, delivery, total,
+      payment: 'PENDING',
+      status:  'PAYMENT_PENDING',
+    };
+
+    try {
+      const { error } = await db.from('orders').insert(order);
+      if (error) throw error;
+      await db.from('order_history').insert({ order_id: orderId, status: 'PAYMENT_PENDING', note: 'Order placed by customer' });
+    } catch (err) {
+      console.error('Supabase error:', err);
+      // Fall back to localStorage so order isn't lost
+      const local = JSON.parse(localStorage.getItem('pv_orders_local')||'[]');
+      local.unshift({ ...order, _local: true });
+      localStorage.setItem('pv_orders_local', JSON.stringify(local));
+      showToast('Order saved locally (offline mode)', 'info');
+    }
+
+    btn.disabled = false;
+    openPayModal(order);
+  }
+
+  // ── PAYMENT MODAL ─────────────────────────────
+  function openPayModal(order) {
+    const upiId   = SETTINGS.upi_id || '09811427517@oksbi';
+    const upiStr  = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=Printer+Vatika&am=${order.total}&cu=INR&tn=${encodeURIComponent('Order '+order.id)}`;
+    const qrURL   = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiStr)}&bgcolor=FAFAF8&color=1A1A1A&margin=10`;
+    const mobile  = /Android|iPhone|iPad/i.test(navigator.userAgent);
+
+    document.getElementById('pay-modal-inner').innerHTML = `
+      <div style="text-align:center;">
+        <div class="label" style="justify-content:center;margin-bottom:.35rem;">Order ${order.id}</div>
+        <h2 class="heading-lg" style="margin-bottom:0;">Choose Payment Method</h2>
+      </div>
+      
+      <div class="modal-amount">
+        <div style="font-size:.65rem;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.35rem;">Amount Due</div>
+        <div class="modal-amount-val">₹${fmt(order.total)}</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1rem;">
+        <!-- Option 1: Razorpay -->
+        <button onclick="payWithRazorpay('${order.id}', ${order.total}, '${order.name}', '${order.email}', '${order.phone}')" class="btn btn-primary" style="width:100%;padding:1.15rem;font-size:1rem;justify-content:center;background:#00B2EC;border-color:#00B2EC;color:white;">
+          💳 Pay Online Now (Cards, UPI, Netbanking)
+        </button>
+
+        <!-- Option 2: Show QR Code manual fallback -->
+        <button onclick="toggleQRSection()" class="btn btn-outline" style="width:100%;padding:0.75rem;justify-content:center;font-size:0.85rem;">
+          📷 Scan UPI QR Code (Manual Verification)
+        </button>
+
+        <!-- Option 3: Pay at Shop Counter -->
+        <button onclick="payAtShop('${order.id}','${order.phone}')" class="btn btn-ghost" style="width:100%;padding:0.75rem;justify-content:center;font-size:0.85rem;">
+          🏪 Pay Cash at Shop Counter
+        </button>
+      </div>
+
+      <!-- Toggleable UPI QR manual verification section -->
+      <div id="manual-qr-section" style="display:none;border-top:1.5px solid var(--border);padding-top:1.25rem;margin-top:1rem;text-align:center;">
+        <h3 class="heading-sm" style="margin-bottom:0.75rem;">UPI Scan &amp; Pay</h3>
+        ${mobile
+          ? `<a href="${upiStr}" class="btn btn-cyan" style="width:100%;padding:0.85rem;font-size:0.9rem;justify-content:center;border-radius:6px;margin-bottom:0.5rem;">Open UPI App</a>
+             <p class="body-xs" style="margin-bottom:1rem;">Opens GPay, PhonePe, Paytm, BHIM</p>`
+          : `<div style="text-align:center;margin-bottom:1rem;"><img src="${qrURL}" alt="UPI QR" style="border:1.5px solid var(--border);border-radius:10px;margin:0 auto;" width="180" height="180"><p class="body-xs" style="margin-top:.5rem;">Scan using any UPI app</p></div>`
+        }
+        <div style="text-align:left;">
+          <label class="form-label" style="display:block;margin-bottom:.4rem;">Enter 12-digit UPI UTR / Reference No. *</label>
+          <input type="text" id="utr-inp" class="form-input" placeholder="Enter UTR from payment screen" maxlength="24">
+        </div>
+        <button onclick="confirmUTR('${order.id}','${order.phone}')" class="btn btn-primary" style="width:100%;margin-top:0.75rem;padding:0.75rem;">Submit UTR Code</button>
+      </div>
+    `;
+    document.getElementById('pay-modal').style.display = 'flex';
+  }
+
+  function toggleQRSection() {
+    const el = document.getElementById('manual-qr-section');
+    if (el) {
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
+
+  // ── RAZORPAY HANDLER ──────────────────────────
+  function payWithRazorpay(orderId, totalAmount, name, email, phone) {
+    const options = {
+      key: 'rzp_test_TSRQUFIenOSjSW', // test key
+      amount: totalAmount * 100, // amount in paisa
+      currency: 'INR',
+      name: SETTINGS.shop_name || 'Print Vatika',
+      description: 'Order Payment: ' + orderId,
+      image: 'imgs/business-cards.jpg',
+      handler: async function (response) {
+        const payId = response.razorpay_payment_id;
+        try {
+          await db.from('orders').update({ payment: 'PAID', status: 'CONFIRMED', utr: payId }).eq('id', orderId);
+          await db.from('order_history').insert({ order_id: orderId, status: 'CONFIRMED', note: 'Razorpay Online Payment. Ref: ' + payId });
+        } catch(e) {
+          console.error('Supabase update failed:', e);
+        }
+        Cart.clear();
+        showSuccess(orderId, phone, 'Payment successful! Your order has been placed.');
+      },
+      prefill: {
+        name: name,
+        email: email,
+        contact: phone
+      },
+      theme: {
+        color: '#00B2EC' // Brand Cyan
+      }
+    };
+    const rzp = new Razorpay(options);
+    rzp.open();
+  }
+
+  async function confirmUTR(orderId, phone) {
+    const utr = (document.getElementById('utr-inp')?.value||'').trim();
+    if (!utr || utr.length < 6) { alert('Please enter a valid UTR / reference number.'); return; }
+    await db.from('orders').update({ payment:'PAID', status:'CONFIRMED', utr }).eq('id', orderId);
+    await db.from('order_history').insert({ order_id: orderId, status:'CONFIRMED', note:'UPI payment confirmed. UTR: '+utr });
+    Cart.clear();
+    showSuccess(orderId, phone, 'Payment submitted! We will verify the UTR and start printing.');
+  }
+
+  async function payAtShop(orderId, phone) {
+    await db.from('orders').update({ status:'CONFIRMED' }).eq('id', orderId);
+    await db.from('order_history').insert({ order_id: orderId, status:'CONFIRMED', note:'Customer will pay at shop on pickup.' });
+    Cart.clear();
+    showSuccess(orderId, phone, 'Order saved. Bring cash or scan UPI QR at our counter when collecting.');
+  }
+
+  function showSuccess(orderId, phone, msg) {
+    document.getElementById('pay-modal-inner').innerHTML = `
+      <div style="text-align:center;padding:1rem 0;">
+        <div style="width:56px;height:56px;background:#DCFCE7;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.5rem;">✓</div>
+        <h2 class="heading-lg">Order Placed!</h2>
+        <p class="body-sm" style="margin-top:.75rem;max-width:320px;margin-left:auto;margin-right:auto;">${msg}</p>
+        <div style="background:var(--parchment);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-top:1.5rem;font-size:.8rem;">
+          <strong>Order ID: ${orderId}</strong><br><span style="color:var(--ink-mute);">Save this to track your order.</span>
+        </div>
+      </div>
+      <a href="track.html?id=${orderId}&phone=${encodeURIComponent(phone)}" class="btn btn-primary" style="width:100%;">Track My Order →</a>
+    `;
+  }
+  </script>
+</body>
+</html>

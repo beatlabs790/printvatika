@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Track Order — Print Vatika</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header" id="site-header"></header>
+
+  <div class="track-page">
+    <div class="track-box">
+      <div class="label">Order Status</div>
+      <h1 class="heading-xl" style="margin-bottom:2rem;">Track your print job</h1>
+
+      <!-- User Orders Section (Visible only when logged in with past orders) -->
+      <div id="user-orders-section" style="display:none; margin-bottom:2rem;"></div>
+
+      <div class="track-form-card">
+        <form onsubmit="event.preventDefault(); doTrack();">
+          <div class="form-row" style="margin-bottom:1rem;">
+            <div class="form-field">
+              <label class="form-label">Order Number</label>
+              <input type="text" id="t-id" class="form-input" placeholder="e.g. PV-1001">
+            </div>
+            <div class="form-field">
+              <label class="form-label">Registered Phone</label>
+              <input type="tel" id="t-phone" class="form-input" placeholder="10-digit number">
+            </div>
+          </div>
+          <button type="submit" id="track-btn" class="btn btn-primary" style="width:100%;">Track Order</button>
+        </form>
+      </div>
+
+      <div id="track-result"></div>
+    </div>
+  </div>
+
+  <footer class="site-footer" id="site-footer"></footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/products.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+  window.addEventListener('DOMContentLoaded', async () => {
+    renderHeader('track');
+    renderFooter();
+
+    // Auto-fill from URL params (redirect from checkout)
+    const p = new URLSearchParams(location.search);
+    if (p.get('id'))    document.getElementById('t-id').value    = p.get('id');
+    if (p.get('phone')) document.getElementById('t-phone').value = p.get('phone');
+    
+    await loadUserOrders();
+
+    if (p.get('id') && p.get('phone')) doTrack();
+  });
+
+  async function loadUserOrders() {
+    try {
+      const { data: { session } } = await db.auth.getSession();
+      if (!session) return;
+
+      const { data: orders, error } = await db
+        .from('orders')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false });
+
+      if (error || !orders || orders.length === 0) return;
+
+      const container = document.getElementById('user-orders-section');
+      if (!container) return;
+
+      const name = session.user.user_metadata?.full_name || 'Customer';
+      
+      let html = `
+        <div class="section-box" style="margin-bottom: 2rem;">
+          <div class="section-box-header" style="background:var(--ink);color:white;font-weight:700;">My Orders</div>
+          <div style="padding: 1.25rem 1.5rem; display:flex; flex-direction:column; gap:0.75rem;">
+            <p class="body-sm">Hi <strong>${name}</strong>, here are your recent orders. Click any order to track status:</p>
+            <div style="display:flex; flex-direction:column; gap:0.6rem;">
+      `;
+
+      orders.forEach(o => {
+        const itemsText = o.items.map(i => `${i.name} (x${i.qty})`).join(', ');
+        html += `
+          <div onclick="selectTrackOrder('${o.id}', '${o.phone}')" style="display:flex; justify-content:space-between; align-items:center; padding:0.75rem; border:1px solid var(--border); border-radius:6px; background:var(--white); cursor:pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='var(--ink)'" onmouseout="this.style.borderColor='var(--border)'">
+            <div>
+              <div style="font-size:0.8rem; font-weight:700;">Order ${o.id}</div>
+              <div class="body-xs" style="color:var(--ink-mute); font-size:0.7rem; max-width:320px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${itemsText}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.75rem;">
+              <span style="font-weight:800; font-size:0.8rem;">₹${fmt(o.total)}</span>
+              ${statusBadge(o.status)}
+            </div>
+          </div>
+        `;
+      });
+
+      html += `
+            </div>
+          </div>
+        </div>
+      `;
+
+      container.innerHTML = html;
+      container.style.display = 'block';
+    } catch (e) {
+      console.warn('Failed to load user orders', e);
+    }
+  }
+
+  function selectTrackOrder(id, phone) {
+    document.getElementById('t-id').value = id;
+    document.getElementById('t-phone').value = phone;
+    doTrack();
+  }
+
+  async function doTrack() {
+    const id    = (document.getElementById('t-id')?.value||'').trim().toUpperCase();
+    const phone = (document.getElementById('t-phone')?.value||'').replace(/\D/g,'').slice(-10);
+    const result = document.getElementById('track-result');
+    const btn    = document.getElementById('track-btn');
+    if (!result) return;
+    if (!id || phone.length < 10) { result.innerHTML = `<div class="warning-strip" style="margin-top:1.5rem;">Please enter both your order number and registered phone number.</div>`; return; }
+
+    btn.disabled = true; btn.textContent = 'Searching…';
+
+    const { data, error } = await db
+      .from('orders')
+      .select('*, order_history(*)')
+      .ilike('id', id)
+      .single();
+
+    btn.disabled = false; btn.textContent = 'Track Order';
+
+    if (error || !data) {
+      result.innerHTML = `<div class="warning-strip" style="margin-top:1.5rem;">Order not found. Check the order ID (e.g. PV-1001) and the phone number you used at checkout.</div>`;
+      return;
+    }
+
+    const order = data;
+    // Verify phone matches
+    if (order.phone.replace(/\D/g,'').slice(-10) !== phone) {
+      result.innerHTML = `<div class="warning-strip" style="margin-top:1.5rem;">Phone number doesn't match. Please use the number you entered during checkout.</div>`;
+      return;
+    }
+
+    const STEPS = [
+      { status:'PAYMENT_PENDING', label:'Order Placed',   sub:'Awaiting payment' },
+      { status:'CONFIRMED',       label:'Confirmed',       sub:'Job accepted by press' },
+      { status:'PRINTING',        label:'On Press',        sub:'Currently being printed' },
+      { status:'READY',           label: order.fulfillment==='delivery' ? 'Out for Delivery' : 'Ready for Pickup', sub:'Job sealed and completed' },
+      { status:'DELIVERED',       label: order.fulfillment==='delivery' ? 'Delivered' : 'Collected', sub:'Fulfilment confirmed' },
+    ];
+    const curIdx = Math.max(0, STEPS.findIndex(s => s.status === order.status));
+
+    const stepsHtml = STEPS.map((step, i) => {
+      const cls = i < curIdx ? 'done' : i === curIdx ? 'active' : 'pending';
+      return `<div class="tl-step ${cls}"><div class="tl-dot"></div><div><div class="tl-label">${step.label}</div><div class="tl-sub">${step.sub}</div></div></div>`;
+    }).join('');
+
+    const historyHtml = (order.order_history||[]).sort((a,b) => new Date(a.created_at)-new Date(b.created_at)).map(h => `
+      <div style="display:flex;gap:.75rem;align-items:flex-start;padding:.65rem 0;border-bottom:1px solid var(--border);">
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--cyan);margin-top:.35rem;flex-shrink:0;"></div>
+        <div>
+          <div style="font-size:.8rem;font-weight:700;">${h.status.replace(/_/g,' ')}</div>
+          ${h.note ? `<div class="body-xs" style="margin-top:.15rem;">${h.note}</div>` : ''}
+          <div class="body-xs" style="color:var(--ink-mute);">${fmtDate(h.created_at)}</div>
+        </div>
+      </div>
+    `).join('');
+
+    const itemsHtml = (order.items||[]).map(item => `
+      <div style="display:flex;gap:.75rem;align-items:center;padding:.75rem 0;border-bottom:1px solid var(--border);">
+        <img src="${item.preview||''}" style="width:52px;height:52px;border-radius:6px;border:1px solid var(--border);object-fit:cover;flex-shrink:0;background:var(--parchment);" onerror="this.style.display='none'">
+        <div style="flex-grow:1;"><div style="font-size:.875rem;font-weight:700;">${item.name}${item.dims?' ('+item.dims.w+'×'+item.dims.h+' ft)':''}</div><div class="body-xs">Qty: ${item.qty}</div></div>
+        <div style="font-weight:800;font-family:var(--font-serif);">₹${fmt(item.price)}</div>
+      </div>
+    `).join('');
+
+    result.innerHTML = `
+      <div class="timeline">
+        <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:1rem;margin-bottom:1.5rem;gap:1rem;flex-wrap:wrap;">
+          <div>
+            <div class="label" style="margin:0 0 .2rem;">Order ${order.id}</div>
+            <div class="heading-md">${order.name}</div>
+            <div class="body-xs" style="margin-top:.15rem;">${order.fulfillment==='delivery'?'📦 Delivery to: '+order.address:'🏪 Self-pickup at shop'}</div>
+          </div>
+          ${statusBadge(order.status)}
+        </div>
+        <div class="timeline-steps">${stepsHtml}</div>
+      </div>
+
+      <div class="section-box" style="margin-top:1.5rem;">
+        <div class="section-box-header">Job Details</div>
+        <div style="padding:0 1.5rem;">${itemsHtml}
+          <div style="padding:1rem 0 1.5rem;display:flex;justify-content:space-between;font-weight:900;font-family:var(--font-serif);font-size:1.05rem;"><span>Total</span><span>₹${fmt(order.total)}</span></div>
+        </div>
+      </div>
+
+      ${historyHtml ? `<div class="section-box" style="margin-top:1.5rem;">
+        <div class="section-box-header">Status History</div>
+        <div style="padding:.5rem 1.5rem 1rem;">${historyHtml}</div>
+      </div>` : ''}
+
+      <div style="text-align:center;margin-top:1.5rem;">
+        <a href="https://wa.me/${SETTINGS.whatsapp||'919811427517'}?text=Hi%2C+my+order+ID+is+${order.id}+and+I+have+a+question." target="_blank" class="whatsapp-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.121.553 4.112 1.524 5.84L0 24l6.318-1.524A11.94 11.94 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 0 1-5.007-1.373l-.36-.214-3.73.978.994-3.638-.234-.374A9.818 9.818 0 1 1 12 21.818z"/></svg>
+          WhatsApp Us About This Order
+        </a>
+      </div>
+    `;
+  }
+  </script>
+</body>
+</html>

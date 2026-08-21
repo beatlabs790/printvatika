@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Print Catalog — Print Vatika</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="catalog-page">
+  <header class="site-header" id="site-header"></header>
+
+  <div class="catalog-header">
+    <div class="container">
+      <div class="label">What we print</div>
+      <h1 class="heading-xl">Print Catalog</h1>
+      <p class="body-sm" style="margin-top:.5rem;max-width:500px;">Click any product to configure specs, upload your artwork, and get a price instantly.</p>
+      <div class="filter-bar" id="filter-bar">
+        <button class="filter-btn active" data-cat="all">All</button>
+        <button class="filter-btn" data-cat="stationery">Stationery</button>
+        <button class="filter-btn" data-cat="apparel">Apparel</button>
+        <button class="filter-btn" data-cat="signage">Signage</button>
+        <button class="filter-btn" data-cat="marketing">Marketing</button>
+        <button class="filter-btn" data-cat="specialty">Specialty</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="container">
+      <div id="catalog-grid" class="products-grid"></div>
+    </div>
+  </div>
+
+  <footer class="site-footer" id="site-footer"></footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/products.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    let activeFilter = 'all';
+
+    function render() {
+      const activeProducts = PRODUCTS.filter(p => p.active !== false);
+      const list = activeFilter === 'all' ? activeProducts : activeProducts.filter(p => p.category === activeFilter);
+      const grid = document.getElementById('catalog-grid');
+      if (!grid) return;
+      grid.innerHTML = list.length
+        ? list.map(productCardHTML).join('')
+        : `<p class="body-sm" style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--ink-mute);">No products in this category.</p>`;
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      renderHeader('catalog');
+      renderFooter();
+      await loadProducts();
+      render();
+
+      document.getElementById('filter-bar').addEventListener('click', e => {
+        const btn = e.target.closest('.filter-btn');
+        if (!btn) return;
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeFilter = btn.dataset.cat;
+        render();
+      });
+    });
+  </script>
+</body>
+</html>

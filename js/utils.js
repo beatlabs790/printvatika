@@ -1,0 +1,299 @@
+// ── SHARED UTILITIES ─────────────────────────────────────────
+
+// Indian currency formatter
+window.fmt = n => (n || 0).toLocaleString('en-IN');
+
+// ── TOAST ─────────────────────────────────────────────────────
+window.showToast = function (msg, type = 'success') {
+  let wrap = document.getElementById('toast-root');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'toast-root';
+    wrap.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem;';
+    document.body.appendChild(wrap);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = msg;
+  wrap.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3200);
+};
+
+// ── PRICE CALCULATOR ──────────────────────────────────────────
+window.calcPrice = function (product, options, qty, dims) {
+  if (!product || product.basePrice === 0) return { unit: 0, subtotal: 0, discount: 0, discPct: 0, total: 0 };
+
+  let optMod = 0;
+  (product.options || []).forEach(opt => {
+    if (opt.type === 'select') {
+      const c = (opt.choices || []).find(ch => ch.val === options[opt.key]);
+      if (c) optMod += c.mod;
+    }
+  });
+
+  const unit = product.basePrice + optMod;
+  let subtotal;
+
+  if (product.slug === 'flex-banners') {
+    const sqft   = (dims?.w || 4) * (dims?.h || 3);
+    const matMod = (product.options.find(o => o.key === 'material')?.choices.find(c => c.val === options.material)?.mod) || 0;
+    const finMod = (product.options.find(o => o.key === 'finishing')?.choices.find(c => c.val === options.finishing)?.mod) || 0;
+    subtotal = (product.basePrice + matMod) * sqft * qty + finMod;
+  } else {
+    subtotal = unit * qty;
+  }
+
+  const discFactor = Object.entries(product.qtyDiscounts || {})
+    .filter(([q]) => qty >= +q)
+    .sort(([a],[b]) => +b - +a)[0]?.[1] ?? 1.0;
+
+  const discount = Math.round(subtotal * (1 - discFactor));
+  const total    = Math.round(subtotal * discFactor);
+  const discPct  = Math.round((1 - discFactor) * 100);
+  return { unit, subtotal, discount, discPct, total };
+};
+
+// ── PRODUCT CARD HTML ─────────────────────────────────────────
+window.productCardHTML = function (p) {
+  const price = p.basePrice === 0 ? 'Get a Quote' : '₹' + fmt(p.basePrice);
+  const unit  = p.basePrice === 0 ? '' : `<small style="font-size:.62rem;font-weight:400;color:var(--ink-mute)"> ${p.baseUnit}</small>`;
+  return `<div class="product-card" onclick="location.href='product.html?slug=${p.slug}'">
+    <div class="product-img-wrap">
+      <img src="${p.image}" alt="${p.name}" loading="lazy">
+      <span class="product-cat-tag">${p.category}</span>
+    </div>
+    <div class="product-body">
+      <div class="product-name">${p.name}</div>
+      <div class="product-desc">${p.desc}</div>
+      <div class="product-footer">
+        <div class="product-price-wrap">
+          <div class="product-price-from">Starting from</div>
+          <div class="product-price">${price}${unit}</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();location.href='product.html?slug=${p.slug}'">Customise →</button>
+      </div>
+    </div>
+  </div>`;
+};
+
+// ── SHARED HEADER / FOOTER ────────────────────────────────────
+window.renderHeader = function (activePage) {
+  const el = document.getElementById('site-header');
+  if (!el) return;
+  el.innerHTML = `<div class="header-inner">
+    <a href="index.html" class="brand"><div class="brand-mark">PV</div>Print Vatika</a>
+    <nav class="header-nav">
+      <a href="index.html"   class="nav-link ${activePage==='home'    ? 'active':''}" >Home</a>
+      <a href="catalog.html" class="nav-link ${activePage==='catalog' ? 'active':''}">Catalog</a>
+      <a href="track.html"   class="nav-link ${activePage==='track'   ? 'active':''}">Track Order</a>
+    </nav>
+    <div class="header-phone">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.54A16 16 0 0 0 14 15.59l.95-.86a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      <a href="tel:09811427517">098114 27517</a>
+    </div>
+    
+    <!-- Dynamic Auth Zone -->
+    <div id="header-auth-zone" style="display:flex;align-items:center;gap:0.75rem;"></div>
+
+    <a href="cart.html" class="cart-btn">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+      Cart <span class="cart-badge" style="display:none;">0</span>
+    </a>
+  </div>`;
+  
+  Cart.updateBadge();
+  updateHeaderAuth();
+};
+
+window.updateHeaderAuth = async function () {
+  const zone = document.getElementById('header-auth-zone');
+  if (!zone) return;
+
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if (session) {
+      const user = session.user;
+      const name = user.user_metadata?.full_name || user.email.split('@')[0];
+      zone.innerHTML = `
+        <span style="font-size:0.8rem;font-weight:700;color:var(--ink);">Hi, ${name}</span>
+        <button onclick="handleHeaderLogout()" class="btn btn-ghost btn-sm" style="padding:4px 8px;font-size:0.7rem;border:1px solid var(--border);border-radius:4px;">Logout</button>
+      `;
+    } else {
+      zone.innerHTML = `
+        <a href="login.html" class="nav-link" style="font-weight:700;color:var(--cyan-dark);">Sign In</a>
+      `;
+    }
+  } catch (e) {
+    console.warn('Auth check failed', e);
+  }
+};
+
+window.handleHeaderLogout = async function () {
+  await db.auth.signOut();
+  showToast('Logged out successfully', 'info');
+  setTimeout(() => location.reload(), 500);
+};
+
+window.renderFooter = function () {
+  const el = document.getElementById('site-footer');
+  if (!el) return;
+  el.innerHTML = `<div class="footer-inner">
+    <div class="footer-brand">Print Vatika</div>
+    <div class="footer-links">
+      <a href="index.html"   class="footer-link">Home</a>
+      <a href="catalog.html" class="footer-link">Catalog</a>
+      <a href="track.html"   class="footer-link">Track Order</a>
+      <a href="privacy.html" class="footer-link">Privacy</a>
+      <a href="terms.html"   class="footer-link">Terms</a>
+      <a href="admin.html"   class="footer-link" style="color:rgba(255,255,255,.25)">Admin →</a>
+    </div>
+    <div class="footer-copy">© 2025 Print Vatika · F-298, Lado Sarai, New Delhi 110030 · 098114 27517</div>
+  </div>`;
+};
+
+// ── CANVAS ENGINE ─────────────────────────────────────────────
+window.CE = {
+  draw(canvas, product, options, dims, imageObj, designPos) {
+    if (!canvas || !product) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    this.base(ctx, W, H, product, options, dims);
+    if (imageObj) {
+      ctx.save();
+      this.clip(ctx, W, H, product, options, dims);
+      ctx.translate(W/2 + designPos.x, H/2 + designPos.y);
+      ctx.rotate(designPos.rot * Math.PI / 180);
+      const dw = imageObj.width * designPos.scale, dh = imageObj.height * designPos.scale;
+      ctx.drawImage(imageObj, -dw/2, -dh/2, dw, dh);
+      ctx.restore();
+      this.safetyLines(ctx, W, H, product, options);
+    } else {
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '600 12px Outfit,sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('Upload a design to preview here', W/2, H/2);
+    }
+  },
+
+  base(ctx, W, H, product, options, dims) {
+    switch (product.slug) {
+      case 'business-cards': this._card(ctx, W, H);               break;
+      case 't-shirts':       this._shirt(ctx, W, H, options);     break;
+      case 'flex-banners':   this._banner(ctx, W, H, dims);       break;
+      case 'stickers':       this._sticker(ctx, W, H, options);   break;
+      default:               this._generic(ctx, W, H);            break;
+    }
+  },
+
+  clip(ctx, W, H, product, options, dims) {
+    ctx.beginPath();
+    switch (product.slug) {
+      case 'business-cards': { const cw=300,ch=170,rx=(W-cw)/2,ry=(H-ch)/2; ctx.roundRect(rx,ry,cw,ch,6); break; }
+      case 't-shirts':       ctx.rect((W-120)/2, H/2-80, 120, 160); break;
+      case 'flex-banners':   { const r=this._bannerRect(W,H,dims); ctx.rect(r.x,r.y,r.w,r.h); break; }
+      case 'stickers':       { const sh=options.shape||'circle'; if(sh==='circle') ctx.arc(W/2,H/2,110,0,Math.PI*2); else ctx.roundRect((W-220)/2,(H-220)/2,220,220,10); break; }
+      default:               ctx.rect(25,25,W-50,H-50);
+    }
+    ctx.clip();
+  },
+
+  safetyLines(ctx, W, H, product, options) {
+    ctx.save();
+    ctx.strokeStyle='rgba(239,68,68,.45)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+    if (product.slug==='business-cards') ctx.strokeRect((W-280)/2,(H-150)/2,280,150);
+    if (product.slug==='stickers') {
+      ctx.beginPath();
+      const sh=options.shape||'circle';
+      if(sh==='circle') ctx.arc(W/2,H/2,98,0,Math.PI*2); else ctx.rect((W-200)/2,(H-200)/2,200,200);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+
+  _card(ctx, W, H) {
+    const cw=300,ch=170,rx=(W-cw)/2,ry=(H-ch)/2;
+    ctx.fillStyle='#F5F0E8'; ctx.fillRect(0,0,W,H);
+    ctx.shadowColor='rgba(0,0,0,.12)'; ctx.shadowBlur=20; ctx.shadowOffsetY=4;
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.roundRect(rx,ry,cw,ch,6); ctx.fill();
+    ctx.shadowColor='transparent'; ctx.strokeStyle='#D8D4CC'; ctx.lineWidth=1; ctx.stroke();
+  },
+
+  _shirt(ctx, W, H, options) {
+    const cm={white:'#FFF',black:'#1f1f23',navy:'#1B263B',grey:'#CBD5E1'};
+    const c=cm[options.color||'white']||'#FFF';
+    ctx.fillStyle='#F5F0E8'; ctx.fillRect(0,0,W,H);
+    ctx.shadowColor='rgba(0,0,0,.1)'; ctx.shadowBlur=12; ctx.shadowOffsetY=4;
+    ctx.fillStyle=c; const cx=W/2;
+    ctx.beginPath();
+    ctx.moveTo(cx-40,35); ctx.quadraticCurveTo(cx,48,cx+40,35);
+    ctx.lineTo(cx+90,48); ctx.lineTo(cx+115,95); ctx.lineTo(cx+78,108); ctx.lineTo(cx+68,88);
+    ctx.lineTo(cx+68,H-40); ctx.lineTo(cx-68,H-40); ctx.lineTo(cx-68,88);
+    ctx.lineTo(cx-78,108); ctx.lineTo(cx-115,95); ctx.lineTo(cx-90,48); ctx.closePath(); ctx.fill();
+    ctx.shadowColor='transparent';
+    if(c==='#FFF'){ctx.strokeStyle='#D8D4CC';ctx.lineWidth=1;ctx.stroke();}
+  },
+
+  _bannerRect(W, H, dims) {
+    const pad=30, asp=(dims?.w||4)/(dims?.h||3);
+    let bw=W-pad*2, bh=bw/asp;
+    if(bh>H-pad*2){bh=H-pad*2;bw=bh*asp;}
+    return {x:(W-bw)/2,y:(H-bh)/2,w:bw,h:bh};
+  },
+
+  _banner(ctx, W, H, dims) {
+    const r=this._bannerRect(W,H,dims);
+    ctx.fillStyle='#CBD5E1'; ctx.fillRect(0,0,W,H);
+    ctx.shadowColor='rgba(0,0,0,.1)'; ctx.shadowBlur=10;
+    ctx.fillStyle='#FFF'; ctx.fillRect(r.x,r.y,r.w,r.h);
+    ctx.shadowColor='transparent'; ctx.strokeStyle='#1A1A1A'; ctx.lineWidth=1.5; ctx.strokeRect(r.x,r.y,r.w,r.h);
+    [[r.x+7,r.y+7],[r.x+r.w-7,r.y+7],[r.x+7,r.y+r.h-7],[r.x+r.w-7,r.y+r.h-7]].forEach(([ex,ey])=>{
+      ctx.beginPath(); ctx.arc(ex,ey,4,0,Math.PI*2);
+      ctx.fillStyle='#94A3B8'; ctx.fill(); ctx.strokeStyle='#475569'; ctx.lineWidth=1; ctx.stroke();
+    });
+  },
+
+  _sticker(ctx, W, H, options) {
+    ctx.fillStyle='#F5F0E8'; ctx.fillRect(0,0,W,H);
+    ctx.shadowColor='rgba(0,0,0,.08)'; ctx.shadowBlur=12;
+    ctx.fillStyle='#FFF'; ctx.beginPath();
+    const sh=options.shape||'circle';
+    if(sh==='circle') ctx.arc(W/2,H/2,110,0,Math.PI*2);
+    else ctx.roundRect((W-220)/2,(H-220)/2,220,220,10);
+    ctx.fill(); ctx.shadowColor='transparent'; ctx.strokeStyle='#D8D4CC'; ctx.lineWidth=1; ctx.stroke();
+  },
+
+  _generic(ctx, W, H) {
+    ctx.fillStyle='#F5F0E8'; ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle='#D8D4CC'; ctx.lineWidth=1.5; ctx.strokeRect(25,25,W-50,H-50);
+  },
+};
+
+// ── ORDER ID GENERATOR ────────────────────────────────────────
+window.genOrderId = async function () {
+  try {
+    const { count } = await db.from('orders').select('*', { count: 'exact', head: true });
+    return 'PV-' + (1001 + (count || 0));
+  } catch {
+    return 'PV-' + (1001 + Math.floor(Math.random() * 9000));
+  }
+};
+
+// ── DATE HELPERS ──────────────────────────────────────────────
+window.fmtDate = d => new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+window.fmtDateShort = d => new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+
+// ── STATUS BADGE ──────────────────────────────────────────────
+window.statusBadge = function (status) {
+  const map = {
+    PAYMENT_PENDING: ['Pending Payment',  'badge-pending'  ],
+    CONFIRMED:       ['Confirmed',         'badge-confirmed'],
+    PRINTING:        ['Printing',          'badge-printing' ],
+    READY:           ['Ready / Dispatch',  'badge-ready'    ],
+    DELIVERED:       ['Delivered',         'badge-done'     ],
+    CANCELLED:       ['Cancelled',         'badge-cancelled'],
+  };
+  const [label, cls] = map[status] || [status, ''];
+  return `<span class="status-badge ${cls}">${label}</span>`;
+};

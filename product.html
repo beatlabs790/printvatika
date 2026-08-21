@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customise — Print Vatika</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="customizer-page">
+  <header class="site-header" id="site-header"></header>
+
+  <div class="customizer-header">
+    <div class="customizer-header-inner">
+      <a href="catalog.html" class="btn btn-ghost btn-sm">← Back to Catalog</a>
+      <div id="breadcrumb" class="body-xs"></div>
+    </div>
+  </div>
+
+  <div class="customizer-layout" id="customizer-layout">
+    <!-- Injected by JS -->
+  </div>
+
+  <footer class="site-footer" id="site-footer"></footer>
+
+  <!-- Payment Modal -->
+  <div id="payment-modal" style="display:none;" class="modal-bg">
+    <div class="modal-card" id="payment-modal-inner"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/products.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+  // ── STATE ─────────────────────────────────────
+  let product       = null;
+  let selOptions    = {};
+  let selQty        = 1;
+  let selDims       = { w: 4, h: 3 };
+  let uploadedFile  = null;
+  let imageObj      = null;
+  let designPos     = { x: 0, y: 0, scale: 0.5, rot: 0 };
+  let isDragging    = false;
+  let dragStart     = { x: 0, y: 0 };
+  let warnAck       = false;
+  let canvasReady   = false;
+
+  // ── BOOT ──────────────────────────────────────
+  window.addEventListener('DOMContentLoaded', async () => {
+    renderHeader('catalog');
+    renderFooter();
+
+    await loadProducts();
+
+    const slug = new URLSearchParams(location.search).get('slug');
+    product = PRODUCTS.find(p => p.slug === slug);
+
+    if (!product) {
+      document.getElementById('customizer-layout').innerHTML =
+        `<div style="padding:4rem;text-align:center;">
+          <p class="body-lg">Product not found.</p>
+          <a href="catalog.html" class="btn btn-primary" style="margin-top:1rem;">Browse Catalog</a>
+        </div>`;
+      return;
+    }
+
+    document.title = product.name + ' — Print Vatika';
+    document.getElementById('breadcrumb').textContent = 'Catalog → ' + product.name;
+
+    // Defaults
+    product.options.forEach(opt => {
+      if (opt.type === 'select') selOptions[opt.key] = opt.choices[0].val;
+    });
+    selQty = product.defaultQty;
+
+    buildLayout();
+    requestAnimationFrame(() => { initCanvas(); drawCanvas(); });
+  });
+
+  // ── BUILD LAYOUT ──────────────────────────────
+  function buildLayout() {
+    document.getElementById('customizer-layout').innerHTML = `
+      <!-- Canvas (left) -->
+      <div>
+        <div class="canvas-panel">
+          <div class="canvas-header">
+            <span class="canvas-label">Proof Preview</span>
+            <button onclick="resetCanvas()" class="btn btn-ghost btn-sm">Reset</button>
+          </div>
+          <canvas id="canvas-preview" width="420" height="360"></canvas>
+          <div class="canvas-controls">
+            <div class="slider-row"><label>Scale / Zoom</label><input type="range" id="slider-zoom" min="0.05" max="1.5" step="0.01" value="${designPos.scale}"></div>
+            <div class="slider-row"><label>Rotation</label><input type="range" id="slider-rotate" min="-180" max="180" step="1" value="${designPos.rot}"></div>
+          </div>
+        </div>
+        <p class="body-xs" style="margin-top:.6rem;text-align:center;">Drag your design on the canvas to reposition.</p>
+      </div>
+
+      <!-- Spec panel (right) -->
+      <div class="spec-panel" id="spec-panel"></div>
+    `;
+    renderSpec();
+    document.getElementById('slider-zoom').addEventListener('input',   e => { designPos.scale = +e.target.value; drawCanvas(); });
+    document.getElementById('slider-rotate').addEventListener('input', e => { designPos.rot   = +e.target.value; drawCanvas(); });
+  }
+
+  // ── SPEC PANEL ────────────────────────────────
+  function renderSpec() {
+    const p = product;
+    let html = '';
+
+    // Product info
+    html += `<div class="spec-block"><div class="spec-block-header"><div class="spec-block-title">${p.name}</div></div><div class="spec-block-body" style="padding:1.25rem 1.5rem;"><p class="body-sm">${p.desc}</p></div></div>`;
+
+    // Options
+    p.options.forEach(opt => {
+      html += `<div class="spec-block"><div class="spec-block-header"><div class="spec-block-title">${opt.label}</div></div><div class="spec-block-body">`;
+
+      if (opt.type === 'select') {
+        html += `<div class="option-grid">`;
+        opt.choices.forEach(c => {
+          const sel = selOptions[opt.key] === c.val;
+          const mod = c.mod > 0 ? '+₹'+c.mod : c.mod < 0 ? '−₹'+Math.abs(c.mod) : 'Included';
+          html += `<div class="option-pill${sel?' selected':''}" onclick="pick('${opt.key}','${c.val}')"><span class="option-pill-name">${c.label}</span><span class="option-pill-sub">${mod}</span></div>`;
+        });
+        html += `</div>`;
+      } else if (opt.type === 'dimensions') {
+        html += `<div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:.75rem;">
+          <div class="form-field"><label class="form-label">Width (ft)</label><input type="number" class="form-input" min="1" max="50" value="${selDims.w}" oninput="selDims.w=Math.max(1,+this.value||1);refreshPrice();drawCanvas();"></div>
+          <div style="font-weight:900;color:var(--ink-mute);padding-bottom:.6rem;text-align:center;">×</div>
+          <div class="form-field"><label class="form-label">Height (ft)</label><input type="number" class="form-input" min="1" max="30" value="${selDims.h}" oninput="selDims.h=Math.max(1,+this.value||1);refreshPrice();drawCanvas();"></div>
+        </div>`;
+      } else if (opt.type === 'textarea') {
+        html += `<textarea class="form-input" rows="4" placeholder="Describe your job in detail…" oninput="selOptions['${opt.key}']=this.value" style="resize:vertical;">${selOptions[opt.key]||''}</textarea>`;
+      }
+
+      html += `</div></div>`;
+    });
+
+    // Quantity
+    if (p.quantities.length > 1) {
+      html += `<div class="spec-block"><div class="spec-block-header"><div class="spec-block-title">Quantity</div></div><div class="spec-block-body"><div class="qty-row">`;
+      p.quantities.forEach(q => {
+        html += `<button class="qty-btn${selQty===q?' active':''}" onclick="setQty(${q})">${q} ${q===1?'unit':'units'}</button>`;
+      });
+      html += `</div></div></div>`;
+    }
+
+    // Upload
+    if (p.slug !== 'custom-print') {
+      html += `<div class="spec-block"><div class="spec-block-header"><div class="spec-block-title">Upload Your Design</div></div><div class="spec-block-body">`;
+      if (uploadedFile) {
+        html += `<div class="upload-success"><span style="color:#16A34A;font-weight:700;font-size:.85rem;">✓ ${uploadedFile.name} <span style="font-weight:400;color:var(--ink-mute);">(${(uploadedFile.size/1024/1024).toFixed(2)} MB)</span></span><button onclick="clearUpload()" class="btn btn-ghost btn-sm">Remove</button></div>`;
+      } else {
+        html += `<div class="upload-zone"><input type="file" accept=".png,.jpg,.jpeg,.pdf" onchange="handleUpload(event)"><div class="upload-icon">↑</div><div class="upload-text">Click or drop your design file here</div><div class="upload-hint">PNG, JPG, PDF — max 20 MB</div></div>`;
+      }
+      html += `<div id="upload-warning" style="margin-top:.75rem;"></div></div></div>`;
+    }
+
+    // Price
+    html += `<div id="price-box"></div>`;
+
+    // CTA
+    html += `<div style="display:flex;gap:.75rem;">
+      <a href="catalog.html" class="btn btn-ghost" style="flex:1;">Cancel</a>
+      <button onclick="addToCart()" class="btn btn-primary" style="flex:2;padding:1rem;">Add to Cart →</button>
+    </div>`;
+
+    document.getElementById('spec-panel').innerHTML = html;
+    refreshPrice();
+    if (uploadedFile && imageObj) checkResWarn(imageObj);
+  }
+
+  function pick(key, val) { selOptions[key] = val; renderSpec(); drawCanvas(); }
+  function setQty(q)      { selQty = q;             renderSpec(); }
+
+  function refreshPrice() {
+    const box = document.getElementById('price-box');
+    if (!box) return;
+    if (product.basePrice === 0) { box.innerHTML = `<div class="price-summary"><div class="price-total"><span>Pricing</span><span>Custom Quote</span></div></div>`; return; }
+    const { unit, subtotal, discount, discPct, total } = calcPrice(product, selOptions, selQty, selDims);
+    let rows = '';
+    if (product.slug === 'flex-banners') {
+      rows += `<div class="price-row"><span>Area</span><span>${selDims.w} × ${selDims.h} = ${selDims.w*selDims.h} sq.ft × ${selQty}</span></div>`;
+    } else {
+      rows += `<div class="price-row"><span>Unit price</span><span>₹${fmt(unit)}</span></div>`;
+      rows += `<div class="price-row"><span>× ${selQty} units</span><span>₹${fmt(subtotal)}</span></div>`;
+    }
+    if (discount > 0) rows += `<div class="price-row" style="color:#86EFAC;"><span>Bulk discount (${discPct}% off)</span><span>−₹${fmt(discount)}</span></div>`;
+    box.innerHTML = `<div class="price-summary">${rows}<div class="price-total"><span>Estimated total</span><span>₹${fmt(total)}</span></div></div>`;
+  }
+
+  // ── UPLOAD ────────────────────────────────────
+  function handleUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 20*1024*1024) { alert('File too large. Max 20 MB.'); return; }
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['png','jpg','jpeg','pdf'].includes(ext)) { alert('Unsupported format. Use PNG, JPG, or PDF.'); return; }
+    uploadedFile = { name: file.name, size: file.size };
+    warnAck = false;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        imageObj = img;
+        designPos = { x: 0, y: 0, scale: 0.45, rot: 0 };
+        const sz = document.getElementById('slider-zoom'); if (sz) sz.value = 0.45;
+        renderSpec(); drawCanvas();
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearUpload() { uploadedFile = null; imageObj = null; warnAck = false; renderSpec(); drawCanvas(); }
+
+  function checkResWarn(img) {
+    const el = document.getElementById('upload-warning');
+    if (!el) return;
+    let msg = '';
+    if (product.slug === 'business-cards' && (img.width < 700 || img.height < 400)) msg = 'Low resolution: recommended min 1050 × 600 px for sharp card prints.';
+    else if (product.slug === 't-shirts' && img.width < 800) msg = 'Low resolution: recommended min 1200 × 1200 px for crisp t-shirt prints.';
+    if (msg) el.innerHTML = `<div class="warning-strip"><div>⚠ ${msg}</div><label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;"><input type="checkbox" ${warnAck?'checked':''} onchange="warnAck=this.checked"><span>I understand and want to proceed.</span></label></div>`;
+  }
+
+  // ── ADD TO CART ───────────────────────────────
+  function addToCart() {
+    if (product.slug !== 'custom-print' && !uploadedFile) { alert('Please upload a design file before adding to cart.'); return; }
+    const warnEl = document.getElementById('upload-warning');
+    if (warnEl?.querySelector('input[type=checkbox]') && !warnAck) { alert('Please acknowledge the resolution warning.'); return; }
+    const { total } = calcPrice(product, selOptions, selQty, selDims);
+    const canvas = document.getElementById('canvas-preview');
+    const preview = canvas ? canvas.toDataURL('image/jpeg', 0.65) : '';
+    Cart.add({ id: 'item-'+Date.now(), product, qty: selQty, options: { ...selOptions }, dims: product.slug==='flex-banners'?{...selDims}:null, file: uploadedFile, preview, price: total });
+    showToast('Added to cart!');
+    setTimeout(() => location.href = 'cart.html', 600);
+  }
+
+  // ── CANVAS ────────────────────────────────────
+  function initCanvas() {
+    if (canvasReady) return;
+    canvasReady = true;
+    const canvas = document.getElementById('canvas-preview');
+    if (!canvas) return;
+    const getXY = e => { const r=canvas.getBoundingClientRect(),s=e.touches?e.touches[0]:e; return {x:s.clientX-r.left,y:s.clientY-r.top}; };
+    canvas.addEventListener('mousedown',  e => { if(!imageObj)return; isDragging=true; const p=getXY(e); dragStart={x:p.x-designPos.x,y:p.y-designPos.y}; });
+    canvas.addEventListener('mousemove',  e => { if(!isDragging)return; const p=getXY(e); designPos.x=p.x-dragStart.x; designPos.y=p.y-dragStart.y; drawCanvas(); });
+    canvas.addEventListener('mouseup',    () => isDragging=false);
+    canvas.addEventListener('mouseleave', () => isDragging=false);
+    canvas.addEventListener('touchstart', e => { if(!imageObj)return; isDragging=true; const p=getXY(e); dragStart={x:p.x-designPos.x,y:p.y-designPos.y}; }, {passive:true});
+    canvas.addEventListener('touchmove',  e => { if(!isDragging)return; const p=getXY(e); designPos.x=p.x-dragStart.x; designPos.y=p.y-dragStart.y; drawCanvas(); }, {passive:true});
+    canvas.addEventListener('touchend',   () => isDragging=false);
+  }
+
+  function drawCanvas() { CE.draw(document.getElementById('canvas-preview'), product, selOptions, selDims, imageObj, designPos); }
+  function resetCanvas() { designPos={x:0,y:0,scale:0.5,rot:0}; const sz=document.getElementById('slider-zoom'); if(sz)sz.value=0.5; const sr=document.getElementById('slider-rotate'); if(sr)sr.value=0; drawCanvas(); }
+  </script>
+</body>
+</html>
