@@ -332,7 +332,10 @@
             <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-mute);margin-bottom:.35rem;">Product Catalog</div>
             <p class="body-sm" style="max-width:480px;">Edit product details and pricing. Changes are saved to Supabase and reflected across the site.</p>
           </div>
-          <button onclick="syncProducts()" class="btn btn-outline btn-sm">Sync to DB</button>
+          <div style="display:flex;gap:.75rem;">
+            <button onclick="openAddProductModal()" class="btn btn-primary btn-sm">+ Add Product</button>
+            <button onclick="syncProducts()" class="btn btn-outline btn-sm">Sync to DB</button>
+          </div>
         </div>
         <div class="prod-admin-grid" id="prod-admin-grid"></div>
       </div>
@@ -719,6 +722,161 @@ function openProdModal(idx) {
     </div>
   `;
   document.getElementById('prod-modal').style.display = 'flex';
+}
+
+function openAddProductModal() {
+  document.getElementById('prod-modal-title').textContent = 'Add New Product';
+  document.getElementById('prod-modal-body').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:1rem;padding-bottom:.5rem;">
+      <div class="form-field"><label class="form-label">Product Name *</label><input type="text" id="pa-name" class="form-input" placeholder="e.g. Mug Printing" required></div>
+      <div class="form-field"><label class="form-label">Category</label>
+        <select id="pa-cat" class="form-input">
+          <option value="stationery">Stationery (Cards, Letterheads)</option>
+          <option value="apparel">Apparel (T-shirts, Hoodies)</option>
+          <option value="signage">Signage (Flex Banners, Boards)</option>
+          <option value="marketing">Marketing (Flyers, Posters, Brochures)</option>
+          <option value="specialty">Specialty (Stickers, Customized Items)</option>
+        </select>
+      </div>
+      <div class="form-field"><label class="form-label">Description</label><textarea id="pa-desc" class="form-input" rows="2" placeholder="Brief description of the product..."></textarea></div>
+      <div class="form-field"><label class="form-label">Image URL</label><input type="url" id="pa-img" class="form-input" placeholder="e.g. imgs/custom-print.jpg" value="imgs/custom-print.jpg"></div>
+      <div class="form-row">
+        <div class="form-field"><label class="form-label">Base Price (₹)</label><input type="number" id="pa-price" class="form-input" value="0" min="0"></div>
+        <div class="form-field"><label class="form-label">Base Unit</label><input type="text" id="pa-unit" class="form-input" value="/ piece" placeholder="e.g. / piece, / 100 pcs"></div>
+      </div>
+      <div class="form-field"><label class="form-label">Options Template</label>
+        <select id="pa-template" class="form-input">
+          <option value="stationery">Stationery (Size, Sides, Paper, Lamination)</option>
+          <option value="apparel">Apparel (Color, Size, Print Position)</option>
+          <option value="signage">Signage (Custom Dimensions, Material, Finishing)</option>
+          <option value="marketing">Flyers & pamphlets (Size, Sides, Paper Type)</option>
+          <option value="stickers">Stickers (Shape, Material, Size)</option>
+          <option value="specialty">Custom (Description Textarea Only)</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:.75rem;padding-top:.5rem;">
+        <button onclick="saveNewProduct()" class="btn btn-primary" style="flex:2;">Create Product</button>
+        <button onclick="closeProdModal()" class="btn btn-ghost" style="flex:1;">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('prod-modal').style.display = 'flex';
+}
+
+async function saveNewProduct() {
+  const name = document.getElementById('pa-name').value.trim();
+  if (!name) { alert('Please enter a product name.'); return; }
+  
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  
+  // Verify slug uniqueness
+  if (localProds.some(p => p.slug === slug)) {
+    alert('A product with a similar name/slug already exists.');
+    return;
+  }
+
+  const category = document.getElementById('pa-cat').value;
+  const desc = document.getElementById('pa-desc').value.trim() || 'Custom printed product.';
+  const image = document.getElementById('pa-img').value.trim() || 'imgs/custom-print.jpg';
+  const basePrice = parseInt(document.getElementById('pa-price').value) || 0;
+  const baseUnit = document.getElementById('pa-unit').value.trim() || '/ piece';
+  const template = document.getElementById('pa-template').value;
+  
+  // Generate template options, quantities, and default quantity
+  let options = [];
+  let quantities = [100, 250, 500, 1000];
+  let qtyDiscounts = { 250: 0.92, 500: 0.85, 1000: 0.75 };
+  let defaultQty = 100;
+
+  if (template === 'stationery') {
+    options = [
+      { key: 'size', label: 'Size', type: 'select', choices: [
+        { val: 'standard', label: '3.5″ × 2.0″ Standard', mod: 0  },
+        { val: 'square',   label: '2.0″ × 2.0″ Square',   mod: 30 },
+      ]},
+      { key: 'sides', label: 'Print Sides', type: 'select', choices: [
+        { val: 'single', label: 'Single-sided', mod: 0   },
+        { val: 'double', label: 'Double-sided', mod: 100 },
+      ]},
+      { key: 'paper', label: 'Paper Stock', type: 'select', choices: [
+        { val: '300gsm', label: '300 GSM Art Card',     mod: 0   },
+        { val: '350gsm', label: '350 GSM Premium',      mod: 80  },
+      ]},
+    ];
+  } else if (template === 'apparel') {
+    options = [
+      { key: 'color', label: 'Color', type: 'select', choices: [
+        { val: 'white', label: 'White', mod: 0  },
+        { val: 'black', label: 'Black', mod: 50 },
+      ]},
+      { key: 'size', label: 'Size', type: 'select', choices: [
+        { val: 'S',  label: 'S',  mod: 0 },
+        { val: 'M',  label: 'M',  mod: 0 },
+        { val: 'L',  label: 'L',  mod: 0 },
+        { val: 'XL', label: 'XL', mod: 20 },
+      ]},
+    ];
+    quantities = [1, 5, 10, 25, 50];
+    qtyDiscounts = { 10: 0.95, 25: 0.90, 50: 0.85 };
+    defaultQty = 5;
+  } else if (template === 'signage') {
+    options = [
+      { key: 'dimensions', label: 'Banner Size (Feet)', type: 'dimensions' },
+      { key: 'material', label: 'Flex Material', type: 'select', choices: [
+        { val: 'standard', label: 'Standard Star Flex', mod: 0 },
+        { val: 'vinyl',    label: 'Vinyl Flex',         mod: 15 },
+      ]}
+    ];
+    quantities = [1, 2, 5];
+    qtyDiscounts = {};
+    defaultQty = 1;
+  } else if (template === 'marketing') {
+    options = [
+      { key: 'size', label: 'Size', type: 'select', choices: [
+        { val: 'a4', label: 'A4 Page', mod: 0 },
+        { val: 'a5', label: 'A5 Half', mod: -50 },
+      ]}
+    ];
+  } else if (template === 'stickers') {
+    options = [
+      { key: 'shape', label: 'Shape', type: 'select', choices: [
+        { val: 'circle', label: 'Circle', mod: 0 },
+        { val: 'square', label: 'Square', mod: 0 },
+      ]}
+    ];
+  } else {
+    // Custom / description-only
+    options = [
+      { key: 'description', label: 'Requirement details', type: 'textarea' }
+    ];
+    quantities = [1];
+    qtyDiscounts = {};
+    defaultQty = 1;
+  }
+
+  const newId = 'p' + (localProds.length + 1) + '_' + Math.random().toString(36).substr(2, 4);
+
+  const newProduct = {
+    id: newId,
+    slug,
+    name,
+    category,
+    desc,
+    image,
+    basePrice,
+    baseUnit,
+    options,
+    quantities,
+    qtyDiscounts,
+    defaultQty,
+    active: true
+  };
+
+  localProds.push(newProduct);
+  closeProdModal();
+  renderProducts();
+  await saveProdToSupabase(newProduct);
+  showToast('New product created successfully!', 'success');
 }
 
 function closeProdModal() { document.getElementById('prod-modal').style.display = 'none'; }
