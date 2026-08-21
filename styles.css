@@ -1477,6 +1477,13 @@ input[type=range] {
 /* ── ADMIN ──────────────────────────────────────────────── */
 /* See admin.html inline styles */
 
+.menu-toggle-btn {
+  display: none;
+}
+.mobile-nav-menu {
+  display: none;
+}
+
 /* ── RESPONSIVE ─────────────────────────────────────────── */
 @media (max-width: 900px) {
   .hero-grid { grid-template-columns: 1fr; gap: 3rem; }
@@ -1513,23 +1520,62 @@ input[type=range] {
   
   /* Mobile Optimized Header Wrap */
   .header-inner {
-    height: auto;
-    padding: 0.75rem 1rem;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    height: 64px;
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
   .brand img {
-    height: 28px !important;
+    height: 32px !important;
   }
   .header-phone { display: none; }
-  .header-nav { 
-    order: 4;
-    width: 100%;
+  .header-nav { display: none !important; }
+  .desktop-auth-only { display: none !important; }
+  
+  .menu-toggle-btn {
+    display: flex;
+    align-items: center;
     justify-content: center;
-    margin-top: 0.35rem;
-    gap: 1.5rem;
-    border-top: 1px solid var(--border);
-    padding-top: 0.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--ink);
+    padding: 6px;
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+  .menu-toggle-btn:hover {
+    background: rgba(0,0,0,0.05);
+  }
+  
+  .mobile-nav-menu {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    background: var(--white);
+    border-bottom: 1.5px solid var(--border-dark);
+    padding: 1rem;
+    gap: 0.75rem;
+    box-sizing: border-box;
+  }
+  .mobile-nav-menu.open {
+    display: flex;
+  }
+  .mobile-nav-link {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--ink-soft);
+    padding: 0.5rem 0;
+    width: 100%;
+    text-align: center;
+    border-radius: 4px;
+    transition: background 0.2s, color 0.2s;
+  }
+  .mobile-nav-link.active {
+    color: var(--cyan-dark);
+    background: var(--parchment);
   }
   
   .display { font-size: 2.2rem; }

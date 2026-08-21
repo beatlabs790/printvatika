@@ -96,20 +96,39 @@ window.renderHeader = function (activePage) {
     </div>
     
     <!-- Dynamic Auth Zone -->
-    <div id="header-auth-zone" style="display:flex;align-items:center;gap:0.75rem;"></div>
+    <div id="header-auth-zone" class="desktop-auth-only" style="display:flex;align-items:center;gap:0.75rem;"></div>
 
     <a href="cart.html" class="cart-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
       Cart <span class="cart-badge" style="display:none;">0</span>
     </a>
+    
+    <!-- Mobile Hamburger Toggle -->
+    <button class="menu-toggle-btn" id="menu-toggle-btn" onclick="toggleMobileMenu()" aria-label="Toggle Menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
+  </div>
+  
+  <!-- Mobile Navigation Dropdown Drawer -->
+  <div id="mobile-nav-menu" class="mobile-nav-menu">
+    <a href="index.html"   class="mobile-nav-link ${activePage==='home'    ? 'active':''}">Home</a>
+    <a href="catalog.html" class="mobile-nav-link ${activePage==='catalog' ? 'active':''}">Catalog</a>
+    <a href="track.html"   class="mobile-nav-link ${activePage==='track'   ? 'active':''}">Track Order</a>
+    <div id="mobile-auth-zone-drawer" style="margin-top:0.75rem; border-top:1px solid var(--border); padding-top:0.75rem; display:flex; flex-direction:column; gap:0.5rem; width:100%; align-items:center;"></div>
   </div>`;
   
   Cart.updateBadge();
   updateHeaderAuth();
 };
 
+window.toggleMobileMenu = function () {
+  const menu = document.getElementById('mobile-nav-menu');
+  if (menu) menu.classList.toggle('open');
+};
+
 window.updateHeaderAuth = async function () {
   const zone = document.getElementById('header-auth-zone');
+  const drawerZone = document.getElementById('mobile-auth-zone-drawer');
   if (!zone) return;
 
   try {
@@ -117,14 +136,18 @@ window.updateHeaderAuth = async function () {
     if (session) {
       const user = session.user;
       const name = user.user_metadata?.full_name || user.email.split('@')[0];
-      zone.innerHTML = `
+      const html = `
         <span style="font-size:0.8rem;font-weight:700;color:var(--ink);">Hi, ${name}</span>
         <button onclick="handleHeaderLogout()" class="btn btn-ghost btn-sm" style="padding:4px 8px;font-size:0.7rem;border:1px solid var(--border);border-radius:4px;">Logout</button>
       `;
+      zone.innerHTML = html;
+      if (drawerZone) drawerZone.innerHTML = html;
     } else {
-      zone.innerHTML = `
-        <a href="login.html" class="nav-link" style="font-weight:700;color:var(--cyan-dark);">Sign In</a>
+      const html = `
+        <a href="login.html" class="nav-link" style="font-weight:700;color:var(--cyan-dark);margin:0;">Sign In</a>
       `;
+      zone.innerHTML = html;
+      if (drawerZone) drawerZone.innerHTML = html;
     }
   } catch (e) {
     console.warn('Auth check failed', e);
