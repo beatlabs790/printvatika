@@ -26,6 +26,10 @@
 
 /* ── RESET ──────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
 html { scroll-behavior: smooth; }
 
 body {
@@ -1581,6 +1585,24 @@ input[type=range] {
   .display { font-size: 2.2rem; }
   .section-header { flex-direction: column; align-items: flex-start; }
   .form-row { grid-template-columns: 1fr; }
+
+  /* Mobile Optimized Footer Layout */
+  .footer-inner {
+    flex-direction: column;
+    gap: 1.5rem;
+    text-align: center;
+    align-items: center;
+    padding: 0 1rem;
+  }
+  .footer-links {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .footer-copy {
+    text-align: center;
+    line-height: 1.5;
+  }
 }
 
 /* ── LOADING SCREEN ─────────────────────────────────────── */
