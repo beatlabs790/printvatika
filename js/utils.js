@@ -82,7 +82,9 @@ window.renderHeader = function (activePage) {
   const el = document.getElementById('site-header');
   if (!el) return;
   el.innerHTML = `<div class="header-inner">
-    <a href="index.html" class="brand"><div class="brand-mark">PV</div>Print Vatika</a>
+    <a href="index.html" class="brand" style="display:flex; align-items:center;">
+      <img src="imgs/logo-nobg.png" alt="Print Vatika" style="height:38px; max-height:38px; width:auto; object-fit:contain;" onerror="this.onerror=null; this.outerHTML='<div class=&quot;brand-mark&quot;>PV</div>Print Vatika';">
+    </a>
     <nav class="header-nav">
       <a href="index.html"   class="nav-link ${activePage==='home'    ? 'active':''}" >Home</a>
       <a href="catalog.html" class="nav-link ${activePage==='catalog' ? 'active':''}">Catalog</a>
@@ -139,7 +141,9 @@ window.renderFooter = function () {
   const el = document.getElementById('site-footer');
   if (!el) return;
   el.innerHTML = `<div class="footer-inner">
-    <div class="footer-brand">Print Vatika</div>
+    <div class="footer-brand" style="display:flex; align-items:center;">
+      <img src="imgs/logo-nobg.png" alt="Print Vatika" style="height:32px; width:auto; object-fit:contain; filter:brightness(0) invert(1);" onerror="this.onerror=null; this.outerHTML='Print Vatika';">
+    </div>
     <div class="footer-links">
       <a href="index.html"   class="footer-link">Home</a>
       <a href="catalog.html" class="footer-link">Catalog</a>
