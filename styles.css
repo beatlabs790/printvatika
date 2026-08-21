@@ -1482,7 +1482,7 @@ input[type=range] {
   .hero-grid { grid-template-columns: 1fr; gap: 3rem; }
   .hero-visual { order: -1; }
   .hero-product-stack { grid-template-columns: 1fr 1fr; }
-  .hero-product-tile.featured { aspect-ratio: 16/7; grid-column: auto; }
+  .hero-product-tile.featured { aspect-ratio: 16/7; grid-column: 1 / -1; }
 
   .process-inner { grid-template-columns: 1fr; }
   .process-step { border-right: none; border-bottom: 1px solid rgba(255,255,255,0.1); }
